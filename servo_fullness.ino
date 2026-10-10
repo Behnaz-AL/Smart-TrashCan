@@ -96,9 +96,11 @@ void loop() {
   if (distance > 0 && distance <= MAX_DISTANCE) {
     if (!objectPresent) {
       objectPresent = true;
+      Serial.println("LID_STATUS: OPEN");
       moveTo(OPEN_POS);
       delay(HOLD_TIME);
-      moveTo(CLOSED_POS);                                                                                                                                                                                                                                          
+      moveTo(CLOSED_POS);
+      Serial.println("LID_STATUS: CLOSED");                                                                                                                                                                                                                                          
     }
   } else {
     objectPresent = false;
