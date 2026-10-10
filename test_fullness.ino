@@ -1,6 +1,6 @@
 // --- Sensor 2: Bin Fullness Test ---
-#define FULLNESS_TRIG_PIN 7
-#define FULLNESS_ECHO_PIN 8
+#define FULLNESS_TRIG_PIN 6
+#define FULLNESS_ECHO_PIN 5
 
 // Adjust this to the actual distance from the sensor to the bottom of the empty bin in cm
 const float BIN_HEIGHT_CM = 16.0; 
