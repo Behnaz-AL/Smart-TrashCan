@@ -43,7 +43,7 @@ An intelligent, touchless, AI-powered smart waste management system developed fo
 
 ---
 
-## 📱 Interfaces & Live Demo
+## Interfaces & Live Demo
 
 | Live Web Dashboard |Telegram Alert Bot |
 | :---: | :---: |
