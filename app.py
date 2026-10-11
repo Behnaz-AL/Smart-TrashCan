@@ -1,5 +1,9 @@
 from flask import Flask, request, jsonify, Response
 from datetime import datetime
+import sys
+
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
 
 app = Flask(__name__)
 
@@ -43,21 +47,21 @@ body { background: var(--bg); color: var(--text-main); font-family: 'Outfit', sa
 .header p { color: var(--text-muted); font-size: 0.95rem; margin-top: 5px; font-weight: 300; }
 
 /* Main Card */
-.card { background: var(--card); border-radius: 24px; padding: 30px; box-shadow: 0 20px 50px rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.05); position: relative; overflow: hidden; display: flex; flex-direction: column; align-items: center; gap: 30px; }
+.card { background: var(--card); border-radius: 24px; padding: 30px; box-shadow: 0 20px 50px rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.05); position: relative; overflow: visible; display: flex; flex-direction: column; align-items: center; gap: 30px; }
 
 /* The Bin */
-.bin-wrapper { position: relative; width: 160px; height: 280px; display: flex; flex-direction: column; align-items: center; }
+.bin-wrapper { position: relative; width: 160px; height: 280px; display: flex; flex-direction: column; align-items: center; margin-top: 25px; }
 
 /* Animated Lid Container */
-.lid-container { display: flex; flex-direction: column; align-items: center; width: 100%; transition: transform 0.6s cubic-bezier(0.34, 1.56, 0.64, 1); transform-origin: left bottom; z-index: 10; margin-bottom: -5px; }
-.lid-container.open { transform: translateY(-40px) rotate(-40deg); }
+.lid-container { display: flex; flex-direction: column; align-items: center; width: 100%; transition: transform 0.6s cubic-bezier(0.34, 1.56, 0.64, 1); transform-origin: 15px bottom; z-index: 20; margin-bottom: -5px; }
+.lid-container.open { transform: translateY(-12px) rotate(-42deg); }
 
 /* Black Lid */
-.lid { width: 170px; height: 25px; background: #111; border-radius: 12px; border: 2px solid #333; box-shadow: 0 5px 15px rgba(0,0,0,0.5); }
-.lid-handle { width: 60px; height: 12px; background: #222; border-radius: 6px 6px 0 0; border: 2px solid #333; border-bottom: none; margin-bottom: -2px; }
+.lid { width: 170px; height: 25px; background: #111; border-radius: 12px; border: 2px solid #333; box-shadow: 0 5px 15px rgba(0,0,0,0.5); position: relative; z-index: 20; }
+.lid-handle { width: 60px; height: 12px; background: #222; border-radius: 6px 6px 0 0; border: 2px solid #333; border-bottom: none; margin-bottom: -2px; position: relative; z-index: 21; }
 
 /* Wooden Body */
-.bin-body { width: 150px; flex: 1; border-radius: 0 0 15px 15px; border: 4px solid #3a2318; border-top: none; position: relative; overflow: hidden; box-shadow: inset 0 0 20px rgba(0,0,0,0.8);
+.bin-body { width: 150px; flex: 1; border-radius: 0 0 15px 15px; border: 4px solid #3a2318; border-top: none; position: relative; overflow: hidden; box-shadow: inset 0 0 20px rgba(0,0,0,0.8); z-index: 1;
   /* Wood Texture */
   background: 
     linear-gradient(90deg, rgba(0,0,0,0.4) 0%, transparent 20%, transparent 80%, rgba(0,0,0,0.4) 100%),
@@ -148,13 +152,6 @@ body { background: var(--bg); color: var(--text-main); font-family: 'Outfit', sa
   <div class="card ai-card">
     <div class="ai-badge-header">
       <span class="bin-type-tag"> BIN MODE: <strong>PLASTIC ONLY</strong></span>
-    </div>
-    <div class="ai-status-box" id="ai-status-box">
-      <div class="ai-icon" id="ai-icon">📷</div>
-      <div class="ai-text-group">
-        <div class="ai-title" id="ai-title">Camera Scanner Ready</div>
-        <div class="ai-desc" id="ai-desc">Show item to camera</div>
-      </div>
     </div>
   </div>
 
