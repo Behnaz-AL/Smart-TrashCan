@@ -3,7 +3,12 @@ import time
 import requests
 import re
 import os
+import sys
 from dotenv import load_dotenv
+
+# Ensure safe console output on Windows
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
 
 load_dotenv()
 
@@ -18,25 +23,31 @@ BIN_EMPTY_CM = 16.0  # Distance when completely empty
 BIN_FULL_CM = 2.0    # Distance when completely full
 
 # --- TELEGRAM BOT CONFIG ---
-# 1. Message @BotFather on Telegram to create a bot and get a Token
-# 2. Message @userinfobot to get your Chat ID
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "YOUR_TELEGRAM_BOT_TOKEN_HERE")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "YOUR_CHAT_ID_HERE")
 telegram_alert_sent = False
 
 def send_telegram_alert(volume_pct):
     if TELEGRAM_BOT_TOKEN == "YOUR_TELEGRAM_BOT_TOKEN_HERE" or TELEGRAM_CHAT_ID == "YOUR_CHAT_ID_HERE":
+        print(" --> [TELEGRAM SKIPPED] Bot token or chat ID not set in .env")
         return # Skip if not configured
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     msg = f"🚨 *ALERT:* The Smart Trash Bin is almost full ({volume_pct:.1f}%)! Please empty it."
     try:
-        requests.post(url, json={"chat_id": TELEGRAM_CHAT_ID, "text": msg, "parse_mode": "Markdown"}, timeout=2)
-        print(" ╰─> [TELEGRAM] Sent full bin alert!")
+        response = requests.post(url, json={"chat_id": TELEGRAM_CHAT_ID, "text": msg, "parse_mode": "Markdown"}, timeout=5)
+        if response.status_code == 200:
+            print(f" --> [TELEGRAM] Sent full bin alert ({volume_pct:.1f}%) successfully!")
+        else:
+            print(f" --> [TELEGRAM ERROR] API Response {response.status_code}: {response.text}")
     except Exception as e:
-        print(f" ╰─> [TELEGRAM ERROR] Could not send message: {e}")
+        print(f" --> [TELEGRAM ERROR] Could not send message: {e}")
 
 print("=========================================")
 print(" SmartBin Local Serial Bridge")
+if TELEGRAM_BOT_TOKEN != "YOUR_TELEGRAM_BOT_TOKEN_HERE" and TELEGRAM_CHAT_ID != "YOUR_CHAT_ID_HERE":
+    print(f" [TELEGRAM] Active! Target Chat ID: {TELEGRAM_CHAT_ID}")
+else:
+    print(" [TELEGRAM] Disabled (Missing credentials in .env)")
 print("=========================================")
 
 try:
@@ -63,7 +74,7 @@ while True:
             if "LID_STATUS: OPEN" in line or "target: 400" in line:
                 if current_lid_state != "open":
                     current_lid_state = "open"
-                    print(" ╰─> Lid is opening! Sending to Dashboard...")
+                    print(" --> Lid is opening! Sending to Dashboard...")
                     try:
                         requests.post(FLASK_URL, json={"lid_status": "open"}, timeout=1)
                     except requests.exceptions.RequestException:
@@ -71,7 +82,7 @@ while True:
             elif "LID_STATUS: CLOSED" in line or "target: 200" in line:
                 if current_lid_state != "closed":
                     current_lid_state = "closed"
-                    print(" ╰─> Lid is closing! Sending to Dashboard...")
+                    print(" --> Lid is closing! Sending to Dashboard...")
                     try:
                         requests.post(FLASK_URL, json={"lid_status": "closed"}, timeout=1)
                     except requests.exceptions.RequestException:
@@ -88,7 +99,7 @@ while True:
                     pct = ((BIN_EMPTY_CM - distance) / (BIN_EMPTY_CM - BIN_FULL_CM)) * 100.0
                     pct = max(0.0, min(100.0, pct))
                     
-                print(f" ╰─> Calculated Volume: {pct:.1f}% -> Sending to Dashboard...")
+                print(f" --> Calculated Volume: {pct:.1f}% -> Sending to Dashboard...")
                 
                 # Telegram Alert Logic
                 if pct >= 90.0 and not telegram_alert_sent:
