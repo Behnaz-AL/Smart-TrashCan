@@ -10,6 +10,12 @@ An intelligent, touchless, AI-powered smart waste management system developed fo
 
 ---
 
+## Live Video Demo
+
+[![Smart DuckieBin Live Demo](assets/demo_thumbnail.jpg)](https://youtu.be/TWUFqCkocI0)
+
+---
+
 ## Features
 
 1. **Touchless Lid Automation**:
@@ -37,10 +43,12 @@ An intelligent, touchless, AI-powered smart waste management system developed fo
 
 ---
 
-## Live Demo Links
+## 📱 Interfaces & Live Demo
 
-- **Local Web Dashboard**: [http://localhost:5000](http://localhost:5000)
-- **Telegram Bot Channel**: [@rubberduckiesbot](https://t.me/rubberduckiesbot)
+| Live Web Dashboard |Telegram Alert Bot |
+| :---: | :---: |
+| <img src="assets/dashboard.png" width="340" alt="SmartBin Web Dashboard"/> | <img src="assets/telegram_qr.png" width="220" alt="Telegram Bot QR Code"/><br/>Scan to open [@rubberduckiesbot](https://t.me/rubberduckiesbot) |
+| **Local Dashboard**: [http://localhost:5000](http://localhost:5000)<br/>*Real-time volume telemetry & lid animation* | **Telegram Bot**: [t.me/rubberduckiesbot](https://t.me/rubberduckiesbot)<br/>*Instant alerts when fullness reaches $\ge 90\%$* |
 
 ---
 

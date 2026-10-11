@@ -206,7 +206,7 @@ async function fetchData() {
     // Change color based on fullness
     let color = '#facc15'; // default yellow
     if (pct > 80) color = '#ef4444'; // red if > 80%
-    else if (pct < 20) color = '#22c55e'; // green if empty
+    else if (pct < 30) color = '#22c55e'; // green if empty
     
     document.getElementById('liquid').style.background = `linear-gradient(180deg, ${color} 0%, rgba(0,0,0,0.5) 150%)`;
     document.getElementById('prog-bar').style.background = color;
