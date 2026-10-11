@@ -11,22 +11,63 @@ from collections import deque
 import cv2
 import numpy as np
 import paho.mqtt.client as mqtt
+import requests
 import torch
 import torch.nn as nn
 from torchvision.models import efficientnet_b3
-import winsound
+
+
+# Friendly item names for TTS and UI
+FRIENDLY_NAMES = {
+    "battery":    "Battery",
+    "biological": "Organic waste",
+    "cardboard":  "Cardboard",
+    "clothes":    "Clothing",
+    "glass":      "Glass",
+    "metal":      "Metal",
+    "paper":      "Paper",
+    "plastic":    "Plastic",
+    "shoes":      "Shoes",
+    "trash":      "General trash"
+}
+
+
+# Dedicated background TTS announcer to prevent audio stutter or frame drops
+class VoiceAnnouncer:
+    def __init__(self):
+        self._queue = deque(maxlen=1)
+        self._thread = threading.Thread(target=self._worker, daemon=True)
+        self._thread.start()
+
+    def _worker(self):
+        try:
+            import pyttsx3
+            engine = pyttsx3.init()
+            engine.setProperty('rate', 150)
+            while True:
+                if self._queue:
+                    text = self._queue.popleft()
+                    engine.say(text)
+                    engine.runAndWait()
+                else:
+                    time.sleep(0.05)
+        except Exception as e:
+            print(f"[TTS Error] {e}")
+
+    def say(self, text):
+        if not self._queue:
+            self._queue.append(text)
+
+
+announcer = VoiceAnnouncer()
 
 
 # MQTT Setup
-BROKER_IP = "BROKER_IP_ADDRESS"  # ganti dengan alamat broker MQTT Anda
+BROKER_IP = "BROKER_IP_ADDRESS"
 
-# threading.Event() untuk thread-safe flag
-#         Event.set()   = True
-#         Event.clear() = False
-#         Event.is_set() = cek nilai
-_request_event = threading.Event()   # pengganti REQUEST_FLAG
-_result_lock   = threading.Lock()    # protect RESULT_SENT
-_result_sent   = False               # hanya diakses lewat _result_lock
+_request_event = threading.Event()
+_result_lock   = threading.Lock()
+_result_sent   = False
 
 
 def on_message(client, userdata, msg):
@@ -35,7 +76,7 @@ def on_message(client, userdata, msg):
         try:
             data = json.loads(msg.payload.decode())
             if data.get("request") is True:
-                _request_event.set()          # thread-safe set flag
+                _request_event.set()
                 with _result_lock:
                     _result_sent = False
                 print("[MQTT] Request diterima")
@@ -43,25 +84,25 @@ def on_message(client, userdata, msg):
             print("[MQTT] Payload request invalid:", e)
 
 
-# on_connect untuk tahu kalau koneksi berhasil/gagal
-def on_connect(client, userdata, flags, rc):
+def on_connect(client, userdata, flags, rc, *args, **kwargs):
     if rc == 0:
         print(f"[MQTT] Terhubung ke broker {BROKER_IP}")
         client.subscribe("trash/request")
-        print("[MQTT] Subscribe ke trash/request")
     else:
         print(f"[MQTT] Gagal konek, kode: {rc}")
 
 
 def setup_mqtt() -> mqtt.Client:
-    c = mqtt.Client()
+    try:
+        c = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
+    except Exception:
+        c = mqtt.Client()
     c.on_message  = on_message
     c.on_connect  = on_connect
     try:
         c.connect(BROKER_IP, 1883, keepalive=60)
-    except Exception as e:
-        print(f"[MQTT] Tidak bisa konek ke broker: {e}")
-        print("[MQTT] Program tetap jalan tanpa MQTT")
+    except Exception:
+        pass
     c.loop_start()
     return c
 
@@ -137,8 +178,8 @@ def get_roi(frame: np.ndarray, fraction: float) -> tuple[np.ndarray, tuple]:
 
 # 3. Object Presence Detector (MOG2 pada ROI)
 class ObjectDetector:
-    def __init__(self, history: int = 300, var_threshold: int = 20,
-                 min_area: int = 4000, absence_timeout: float = 0.8):
+    def __init__(self, history: int = 300, var_threshold: int = 16,
+                 min_area: int = 1200, absence_timeout: float = 1.5):
         self.bg = cv2.createBackgroundSubtractorMOG2(
             history=history, varThreshold=var_threshold, detectShadows=False
         )
@@ -300,44 +341,55 @@ def draw_overlay(frame, roi_coords, smooth_probs, class_names,
     elif frame_skipped_blur:
         roi_color = BLUR_COLOR
     elif stable_label and stable_conf >= conf_threshold and is_stable:
-        roi_color = CLASS_COLORS.get(stable_label.lower(), DEFAULT_COLOR)
+        if stable_label.lower() == "plastic":
+            roi_color = (50, 205, 50)  # Green for Plastic Accepted
+        else:
+            roi_color = (0, 0, 255)    # Red for Rejected
     else:
         roi_color = NO_OBJECT_COLOR
 
     cv2.rectangle(frame, (x1, y1), (x2, y2), roi_color, 2)
-    cv2.putText(frame, "ROI", (x1 + 4, y1 + 16),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.5, roi_color, 1, cv2.LINE_AA)
+    cv2.putText(frame, "DETECTION ZONE", (x1 + 4, y1 + 16),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.45, roi_color, 1, cv2.LINE_AA)
     cv2.rectangle(frame, (0, 0), (w - 1, h - 1), roi_color, 4)
 
     ov = frame.copy()
     cv2.rectangle(ov, (0, 0), (w, 64), (15, 15, 15), -1)
     cv2.addWeighted(ov, 0.75, frame, 0.25, 0, frame)
 
+    # Top indicator
+    cv2.putText(frame, "BIN: PLASTIC ONLY", (w - 200, 20),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 200, 255), 1, cv2.LINE_AA)
+
     if not has_object:
-        cv2.putText(frame, "MENUNGGU OBJEK DI ROI...", (12, 44),
-                    cv2.FONT_HERSHEY_DUPLEX, 0.8, NO_OBJECT_COLOR, 2, cv2.LINE_AA)
+        cv2.putText(frame, "HOLD ITEM IN FRONT OF CAMERA", (12, 44),
+                    cv2.FONT_HERSHEY_DUPLEX, 0.75, NO_OBJECT_COLOR, 2, cv2.LINE_AA)
     elif in_warmup:
-        cv2.putText(frame, f"STABILISASI... {warmup_remaining:.1f}s",
+        cv2.putText(frame, f"SCANNING ITEM... {warmup_remaining:.1f}s",
                     (12, 44), cv2.FONT_HERSHEY_DUPLEX, 0.8, WARMUP_COLOR, 2, cv2.LINE_AA)
     elif not stable_label:
-        cv2.putText(frame, "MENGANALISIS...", (12, 44),
-                    cv2.FONT_HERSHEY_DUPLEX, 0.85, (150, 150, 150), 2, cv2.LINE_AA)
+        cv2.putText(frame, "ANALYZING MATERIAL...", (12, 44),
+                    cv2.FONT_HERSHEY_DUPLEX, 0.8, (150, 150, 150), 2, cv2.LINE_AA)
     elif not is_stable:
         cv2.putText(frame,
-                    f"MEMASTIKAN...  {winner_frame_count}/{min_stable_frames} frame",
-                    (12, 44), cv2.FONT_HERSHEY_DUPLEX, 0.7,
+                    f"CONFIRMING... {winner_frame_count}/{min_stable_frames}",
+                    (12, 44), cv2.FONT_HERSHEY_DUPLEX, 0.75,
                     (150, 200, 150), 2, cv2.LINE_AA)
     elif stable_conf < conf_threshold:
         cv2.putText(frame,
-                    f"TIDAK YAKIN  {stable_conf*100:.1f}% < {conf_threshold*100:.0f}%",
-                    (12, 44), cv2.FONT_HERSHEY_DUPLEX, 0.7, NO_OBJECT_COLOR, 2, cv2.LINE_AA)
+                    f"LOW CONFIDENCE ({stable_conf*100:.1f}%) - HOLD STEADY",
+                    (12, 44), cv2.FONT_HERSHEY_DUPLEX, 0.65, NO_OBJECT_COLOR, 2, cv2.LINE_AA)
     else:
-        color = CLASS_COLORS.get(stable_label.lower(), DEFAULT_COLOR)
-        cv2.putText(frame, f"{stable_label.upper()}  {stable_conf*100:.1f}%",
-                    (12, 44), cv2.FONT_HERSHEY_DUPLEX, 1.0, color, 2, cv2.LINE_AA)
+        friendly = FRIENDLY_NAMES.get(stable_label.lower(), stable_label.capitalize())
+        if stable_label.lower() == "plastic":
+            cv2.putText(frame, f"PLASTIC ACCEPTED  {stable_conf*100:.1f}%",
+                        (12, 44), cv2.FONT_HERSHEY_DUPLEX, 0.85, (50, 205, 50), 2, cv2.LINE_AA)
+        else:
+            cv2.putText(frame, f"REJECTED: {friendly.upper()} ({stable_conf*100:.1f}%)",
+                        (12, 44), cv2.FONT_HERSHEY_DUPLEX, 0.75, (0, 0, 255), 2, cv2.LINE_AA)
 
-    cv2.putText(frame, f"FPS {fps:.1f}", (w - 110, 30),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.55, (200, 200, 200), 1, cv2.LINE_AA)
+    cv2.putText(frame, f"FPS {fps:.1f}", (w - 75, 42),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1, cv2.LINE_AA)
 
     if last_blur_score >= 0:
         blur_color = (80, 80, 255) if last_blur_score < blur_threshold \
@@ -421,8 +473,9 @@ def run(model, class_names, img_size, mean, std, use_fp16, device,
     object_first_seen  = None
     in_warmup          = False
     warmup_remaining   = 0.0
-    prev_has_object    = False
-    alarm_triggered    = False
+    prev_has_object      = False
+    last_announced_label = None
+    last_announced_time  = 0.0
 
     while True:
         frame = stream.read()
@@ -447,7 +500,7 @@ def run(model, class_names, img_size, mean, std, use_fp16, device,
             in_warmup                  = False
             frame_skipped_blur         = False
             last_blur_score            = -1.0
-            alarm_triggered            = False
+            last_announced_label       = None
 
         prev_has_object = has_object
 
@@ -478,62 +531,58 @@ def run(model, class_names, img_size, mean, std, use_fp16, device,
                     smoother.get_stable(class_names)
                 winner_fc = smoother.winner_frame_count(class_names)
 
-                # Feature: TALKING BIN
+                # Feature: TALKING BIN & DASHBOARD SYNC (PLASTIC ONLY BIN)
                 if stable_label and is_stable and stable_conf >= conf_threshold:
-                    if stable_label.lower() not in ["paper", "cardboard"] and not alarm_triggered:
-                        print(f"[ALARM] WARNING! {stable_label.upper()} DETECTED! THIS BIN IS ONLY FOR PAPER!")
-                        
-                        # Talk in a background thread
-                        def speak_warning():
-                            import pyttsx3
-                            engine = pyttsx3.init()
-                            engine.setProperty('rate', 160)
-                            engine.say("Warning! Plastic detected. This bin is for paper only.")
-                            engine.runAndWait()
-                            
-                        threading.Thread(target=speak_warning, daemon=True).start()
-                        alarm_triggered = True
-                        
-                    elif stable_label.lower() in ["paper", "cardboard"] and not alarm_triggered:
-                        print(f"[SUCCESS] {stable_label.upper()} DETECTED! GOOD JOB!")
-                        
-                        def speak_success():
-                            import pyttsx3
-                            engine = pyttsx3.init()
-                            engine.setProperty('rate', 160)
-                            engine.say("Thank you for recycling correctly!")
-                            engine.runAndWait()
-                            
-                        threading.Thread(target=speak_success, daemon=True).start()
-                        alarm_triggered = True
+                    now_ts = time.time()
+                    if (stable_label != last_announced_label) or (now_ts - last_announced_time > 4.0):
+                        last_announced_label = stable_label
+                        last_announced_time = now_ts
+                        friendly = FRIENDLY_NAMES.get(stable_label.lower(), stable_label.capitalize())
+
+                        if stable_label.lower() == "plastic":
+                            print(f"\n[AI DECISION] ACCEPTED: Plastic ({stable_conf*100:.1f}%)")
+                            announcer.say("Thank you for recycling correctly! Plastic accepted.")
+                            is_accepted = True
+                        else:
+                            print(f"\n[AI DECISION] REJECTED: {friendly} ({stable_conf*100:.1f}%) - Plastic only!")
+                            announcer.say(f"Warning! {friendly} detected. This bin is for plastic only.")
+                            is_accepted = False
+
+                        def post_to_dash(item_name, accepted, conf):
+                            try:
+                                requests.post("http://127.0.0.1:5000/update", json={
+                                    "item_detected": item_name,
+                                    "item_status": "accepted" if accepted else "rejected",
+                                    "item_conf": round(conf * 100, 1)
+                                }, timeout=0.5)
+                            except Exception:
+                                pass
+
+                        threading.Thread(target=post_to_dash, args=(friendly, is_accepted, stable_conf), daemon=True).start()
 
                 # MQTT Publish
-                # Kirim hanya jika: ada request, belum dikirim,
-                # hasil sudah stabil, dan confidence cukup
-                if (_request_event.is_set()                 # ada request dari ESP32
-                        and stable_label                    # ada label
-                        and is_stable                       # frame sudah dominan
-                        and stable_conf >= conf_threshold): # confidence cukup
+                if (_request_event.is_set()
+                        and stable_label
+                        and is_stable
+                        and stable_conf >= conf_threshold):
 
                     with _result_lock:
                         already_sent = _result_sent
 
                     if not already_sent:
-                        # Payload ke ESP32
                         payload = {
-                            "class":      stable_label,
+                            "class": stable_label,
                         }
                         mqtt_client.publish("trash/result",
                                             json.dumps(payload), qos=1)
                         print(f"[MQTT] Published → {payload}")
 
-                        # Reset state setelah publish
                         smoother.clear()
                         stable_label, stable_conf = "", 0.0
                         smooth_probs = [0.0] * len(class_names)
                         is_stable, winner_fc = False, 0
 
-                        _request_event.clear()          # reset request flag
+                        _request_event.clear()
                         with _result_lock:
                             _result_sent = True
 
@@ -550,7 +599,7 @@ def run(model, class_names, img_size, mean, std, use_fp16, device,
             min_stable_frames  = min_stable_frames,
             is_stable          = is_stable,
         )
-        cv2.imshow("Tong Sampah Otomatis | EfficientNet-B3", display)
+        cv2.imshow("SmartBin AI Material Classifier (Plastic Only)", display)
 
         key = cv2.waitKey(1) & 0xFF
         if key == ord("q") or key == 27:
@@ -563,7 +612,6 @@ def run(model, class_names, img_size, mean, std, use_fp16, device,
     stream.release()
     cv2.destroyAllWindows()
 
-    # FIX 3: Bersihkan MQTT saat program keluar
     mqtt_client.loop_stop()
     mqtt_client.disconnect()
     print("[MQTT] Disconnected.")
@@ -577,16 +625,16 @@ def main():
     )
     parser.add_argument("--model",          type=str,   required=True)
     parser.add_argument("--camera",         type=int,   default=0)
-    parser.add_argument("--conf",           type=float, default=0.75) # Increased to avoid false positives
-    parser.add_argument("--roi",            type=float, default=0.8) # Look at more of the camera frame
-    parser.add_argument("--motion-area",    type=int,   default=4000)
-    parser.add_argument("--smooth",         type=int,   default=3) # Was 20, make it much faster
-    parser.add_argument("--warmup",         type=float, default=0.2)
-    parser.add_argument("--min-stable",     type=int,   default=2) # Was 7, make it much faster
-    parser.add_argument("--blur-threshold", type=float, default=100.0)
+    parser.add_argument("--conf",           type=float, default=0.55) # Optimized threshold for fast, accurate recognition
+    parser.add_argument("--roi",            type=float, default=0.75) # Scanning window
+    parser.add_argument("--motion-area",    type=int,   default=1200) # Easily detects objects
+    parser.add_argument("--smooth",         type=int,   default=3) # Fast smoothing window
+    parser.add_argument("--warmup",         type=float, default=0.15) # Snappy warmup
+    parser.add_argument("--min-stable",     type=int,   default=2) # 2 stable frames
+    parser.add_argument("--blur-threshold", type=float, default=15.0) # Prevents dropping smooth cardboard/metal
     parser.add_argument("--device",         type=str,   default="auto",
                         choices=["auto", "cpu", "cuda", "mps"])
-    parser.add_argument("--absence-timeout", type=float, default=0.4) # Faster reset
+    parser.add_argument("--absence-timeout", type=float, default=1.5) # Keeps object alive while holding still
     args = parser.parse_args()
 
     if args.device == "auto":

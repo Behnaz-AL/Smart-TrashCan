@@ -7,7 +7,10 @@ app = Flask(__name__)
 sensor_data = {
     "volume": 0.0,
     "last_updated": None,
-    "lid_status": "closed"
+    "lid_status": "closed",
+    "item_detected": None,
+    "item_status": None,
+    "item_conf": None
 }
 
 HTML = r"""<!DOCTYPE html>
@@ -88,6 +91,19 @@ body { background: var(--bg); color: var(--text-main); font-family: 'Outfit', sa
 
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
 
+/* AI Material Card */
+.ai-card { padding: 20px 25px; gap: 15px; }
+.ai-badge-header { width: 100%; display: flex; justify-content: space-between; align-items: center; }
+.bin-type-tag { font-size: 0.8rem; letter-spacing: 1.5px; text-transform: uppercase; color: var(--accent); background: rgba(250, 204, 21, 0.12); padding: 5px 12px; border-radius: 20px; border: 1px solid rgba(250, 204, 21, 0.3); }
+.ai-status-box { width: 100%; display: flex; align-items: center; gap: 16px; padding: 14px 18px; border-radius: 16px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); transition: all 0.4s ease; }
+.ai-status-box.accepted { background: rgba(34, 197, 94, 0.12); border-color: rgba(34, 197, 94, 0.5); box-shadow: 0 0 20px rgba(34, 197, 94, 0.2); }
+.ai-status-box.rejected { background: rgba(239, 68, 68, 0.12); border-color: rgba(239, 68, 68, 0.5); box-shadow: 0 0 20px rgba(239, 68, 68, 0.2); animation: shake 0.4s ease-in-out; }
+.ai-icon { font-size: 2rem; filter: drop-shadow(0 2px 5px rgba(0,0,0,0.4)); }
+.ai-text-group { display: flex; flex-direction: column; gap: 3px; }
+.ai-title { font-size: 1.05rem; font-weight: 700; color: #fff; }
+.ai-desc { font-size: 0.82rem; color: var(--text-muted); font-weight: 300; }
+@keyframes shake { 0%, 100% { transform: translateX(0); } 20%, 60% { transform: translateX(-6px); } 40%, 80% { transform: translateX(6px); } }
+
 /* Responsive tweaks */
 @media (max-width: 400px) {
   .bin-wrapper { width: 130px; height: 230px; }
@@ -128,6 +144,20 @@ body { background: var(--bg); color: var(--text-main); font-family: 'Outfit', sa
     </div>
   </div>
 
+  <!-- AI Material Classification Card -->
+  <div class="card ai-card">
+    <div class="ai-badge-header">
+      <span class="bin-type-tag"> BIN MODE: <strong>PLASTIC ONLY</strong></span>
+    </div>
+    <div class="ai-status-box" id="ai-status-box">
+      <div class="ai-icon" id="ai-icon">📷</div>
+      <div class="ai-text-group">
+        <div class="ai-title" id="ai-title">Camera Scanner Ready</div>
+        <div class="ai-desc" id="ai-desc">Show item to camera</div>
+      </div>
+    </div>
+  </div>
+
   <div class="last-upd">
     <div class="led" id="led-indicator"></div>
     <span id="time-val">Waiting for data...</span>
@@ -153,6 +183,27 @@ async function fetchData() {
         document.getElementById('lid-anim').classList.add('open');
     } else {
         document.getElementById('lid-anim').classList.remove('open');
+    }
+    
+    // Update AI Material Scanner Card
+    if (data.item_detected) {
+      const isAccepted = (data.item_status === 'accepted');
+      const box = document.getElementById('ai-status-box');
+      const icon = document.getElementById('ai-icon');
+      const title = document.getElementById('ai-title');
+      const desc = document.getElementById('ai-desc');
+      
+      if (isAccepted) {
+        box.className = 'ai-status-box accepted';
+        icon.textContent = '✅';
+        title.textContent = `${data.item_detected} Accepted (${data.item_conf}%)`;
+        desc.textContent = 'Correct material! Plastic accepted.';
+      } else {
+        box.className = 'ai-status-box rejected';
+        icon.textContent = '🚫';
+        title.textContent = `Rejected: ${data.item_detected} (${data.item_conf}%)`;
+        desc.textContent = 'Warning! This bin is for PLASTIC only.';
+      }
     }
     
     // Change color based on fullness
@@ -209,6 +260,12 @@ def update():
         if "lid_status" in body:
             sensor_data["lid_status"] = body["lid_status"]
             print(f"[DATA] Lid is now: {sensor_data['lid_status']}")
+            
+        if "item_detected" in body:
+            sensor_data["item_detected"] = body["item_detected"]
+            sensor_data["item_status"] = body.get("item_status", "accepted")
+            sensor_data["item_conf"] = body.get("item_conf", 0.0)
+            print(f"[AI SCAN] {sensor_data['item_detected']} ({sensor_data['item_conf']}%) -> {sensor_data['item_status'].upper()}")
             
         return jsonify({"status": "ok", "data": sensor_data})
     except Exception as e:
