@@ -108,7 +108,7 @@ graph TD
         TG -->|Push Notification| PHONE[User Phone - @rubberduckiesbot]
     end
 ```
-![Smart Recycling Bin Prototype](TrashCan Sketch.jpg)
+![Smart Recycling Bin Prototype](/TrashCan Sketch.jpg)
 ---
 
 ## How It Works
